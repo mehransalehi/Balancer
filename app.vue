@@ -153,10 +153,10 @@
 <script setup lang="ts">
 import { onMounted } from 'vue';
 import CryptoJS from 'crypto-js';
+import pako from 'pako';
 
-const url = 'wss://socket.coinex.com/';
-const access_id = '7847A08FB08947EFBC73203AC2DB2765';
-const secret_key = 'A8884935839A26ACF602CDA4A265436E386E2187048A7538';
+
+const url = 'wss://socket.coinex.com/v2/spot';
 
 
 interface Asset {
@@ -165,7 +165,9 @@ interface Asset {
   group: string
 }
 
-const runtimeConfig = useRuntimeConfig()
+const runtimeConfig = useRuntimeConfig()/* 
+const access_id = ref<string>('');//coinex access_id
+const hash = ref<string>('');//coinex secret string that combine with timestamp */
 
 
 const assets = ref([]);
@@ -183,13 +185,14 @@ const showSellBuy = ref(false);
 const socket = ref<any>();
 const token = ref(null);
 const id = ref(null);
-const prices = ref({});
+const prices = ref<{ [key: string]: { asks: [], bids: [] } }>({});
 const avgs = ref({});
 const totals = ref({});
 const inDollors = ref({});
 const refRes = ref({});
 const msg = ref('');
 const loading = ref(false);
+const connected = ref(false);
 
 
 
@@ -197,7 +200,8 @@ const loading = ref(false);
 //methods
 const init = async () => {
   try {
-    const response = await fetch(`${runtimeConfig.public.apiBase}symbols`, {
+    //fetch exchanges keys 
+    const resKeys = await fetch(`${runtimeConfig.public.apiBase}keys`, {
       method: "GET", // HTTP method
       headers: {
         "Content-Type": "application/json", // Specify JSON format
@@ -205,20 +209,59 @@ const init = async () => {
       },
     });
 
-    if (!response.ok) {
-      // Check if response is successful
-      throw new Error(`HTTP error! status: ${response.status}`);
+    if (!resKeys.ok) {
+      throw new Error(`HTTP error! status: ${resKeys.status}`);
     }
 
-    const responseData = await response.json();
-    console.log(responseData);
+    const keyData = await resKeys.json();
+    /* access_id.value = keyData.key;
+    hash.value = keyData.hash; */
+
+    //fetch assets
+    const resSymbols = await fetch(`${runtimeConfig.public.apiBase}symbols`, {
+      method: "GET", // HTTP method
+      headers: {
+        "Content-Type": "application/json", // Specify JSON format
+        "Authorization": runtimeConfig.public.apiAuth
+      },
+    });
+
+    if (!resSymbols.ok) {
+      // Check if response is successful
+      throw new Error(`HTTP error! status: ${resSymbols.status}`);
+    }
+
+    assets.value = await resSymbols.json();
 
     //initial socket 
-    socket.value = new WebSocket(url);
+    //socket.value = new WebSocket(url);
+    socket.value.binaryType = "arraybuffer";
 
-    /* socket.value.onopen = () => {
+
+
+
+    socket.value.onopen = () => {
       console.log('WebSocket connection established');
-    }; */
+      depthSign();
+    };
+
+    socket.value.onping = () => {
+      console.log('Received ping from server')
+      socket.value.pong()
+    }
+    socket.value.onmessage = async (data: any, flags: any) => {
+      message(data, flags);
+    }
+    socket.value.onerror = function (evt: any) {//since there is an error, sockets will close so...
+      console.log(evt);
+    }
+    socket.value.onclose = async function (e: any) {
+      console.log("WebSocket Closed:");
+      console.log("Code:", e.code);          // Close code
+      console.log("Reason:", e.reason);      // Close reason (if available)
+      console.log("Was clean?", e.wasClean); // If the closure was clean (i.e., no error)
+    }
+
   } catch (error) {
     console.error("Error posting data:", error);
   }
@@ -251,26 +294,111 @@ const addOrEdit = async () => {
     msg.value = "Wrong input.";
   }
 }
-const auth = () => {
-  let current_time = new Date().getTime();
-  let sign_str = "access_id=" + access_id + "&tonce=" + current_time + "&secret_key=" + secret_key;
-  const hash = CryptoJS.MD5(sign_str).toString(CryptoJS.enc.Hex).toUpperCase();
+const depthSign = async () => {
+  /* let current_time = new Date().getTime();
+  let sign_str = "access_id=" + access_id.value + "&tonce=" + current_time + "&secret_key=" + hash.value;
+  const hashS = CryptoJS.MD5(sign_str).toString(CryptoJS.enc.Hex).toUpperCase(); */
+
+  /* const timestamp = new Date().getTime().toString();
+  const prepared_str = timestamp;
+  const hmac = CryptoJS.HmacSHA256(prepared_str, hash.value);
+  const signed_str = hmac.toString(CryptoJS.enc.Hex).toLowerCase();
+
+
+
   let param = {
     "id": 1,
     "method": "server.sign",
-    "params": [access_id, hash, current_time]
+    "params": {
+      "access_id": access_id.value,
+      "signed_str": signed_str,
+      "timestamp": timestamp
+    },
   };
-
-
-  /* console.log(current_time);
-  console.log(sign_str);
-  console.log(hash);
-  console.log(param); */
-
-
-  /* await this.socket.send(JSON.stringify(param));*/
+  await socket.value.send(JSON.stringify(param)); */
+  let param = {
+    "id": 1,
+    "method": "depth.subscribe",
+    "params": {
+      "market_list": [
+        ["BTCUSDT", 10, "0", true],
+        ["ETHUSDT", 10, "0", false]
+      ]
+    },
+  };
+  await socket.value.send(JSON.stringify(param));
+  console.log('Authintication Sent...');
 }
+const message = async (data: any, flags: any) => {
+  const buffer = data.data;
 
+  try {
+    // Decompress the buffer using pako (zip compression)
+    const decompressed = pako.inflate(new Uint8Array(buffer), { to: 'string' });
+    // You can parse the JSON if it's in JSON format
+    const strData = JSON.parse(decompressed);
+    console.log("Parsed JSON:", strData);
+    if (strData.method == 'depth.update') {
+      let isFul = strData.params[0];
+      let update = strData.params[1];
+      let market = strData.params[2];
+
+      if (!prices.value[market]) {
+        prices.value[market] = {
+          asks: [],
+          bids: [],
+        }
+      }
+
+      if (isFul) {
+        prices.value[market]['asks'] = update.asks.map((arr: string[]) => {
+          return arr.map((e) => {
+            return parseFloat(e)
+          });
+        });
+        prices.value[market]['bids'] = update.bids.map((arr: string[]) => {
+          return arr.map((e) => {
+            return parseFloat(e)
+          });
+        });;
+      } else {
+        if (update.bids) {
+          prices.value[market]['bids'] = updateRePrices(prices.value[market]['bids'], update.bids);
+        }
+        if (update.asks) {
+          prices.value[market]['asks'] = updatePrices(prices.value[market]['asks'], update.asks);
+        }
+      }
+
+      this.emit(`depth.update.${market}`, prices.value[market]);
+    }
+
+  } catch (error) {
+    console.error("Error decompressing message:", error);
+  }
+}
+const updateRePrices = (main, update) => {
+  update.map(depth => {
+    let index = main.findIndex(e => e[0] == parseFloat(depth[0]));
+    if (index > -1) {//if element exist need to replace
+      main[index][1] = parseFloat(depth[1]);
+    } else {//if element not exist need to add
+      main.push(depth.map((e) => {
+        return parseFloat(e)
+      }));
+    }
+  });
+
+  main = main.filter(b => b[1] > 0);
+  main = main.sort(function (a, b) {
+    if (a[0] > b[0]) return -1;
+    if (a[0] < b[0]) return 1;
+    return 0;
+  });
+
+  return main;
+
+}
 onMounted(() => {
   init();
 });

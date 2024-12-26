@@ -15,12 +15,16 @@
     "crypto-browserify": "^3.12.1",
     "crypto-js": "^4.2.0",
     "nuxt": "^3.14.1592",
+    "pako": "^2.1.0",
+    "socks-proxy-agent": "^8.0.5",
     "vue": "latest",
     "vue-router": "latest",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/crypto-js": "^4.2.2",
-    "@types/node": "^22.10.2"
+    "@types/node": "^22.10.2",
+    "@types/pako": "^2.0.3",
+    "@types/ws": "^8.5.13"
   }
 }
