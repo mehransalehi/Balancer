@@ -4,17 +4,17 @@
       <div class="col-span-1 bg-stone-50 p-6">
         <div class="col-span-2 mb-4">
           <label for="price" class="block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">Symbol</label>
-          <input v-model="asset['symbol']"
+          <input v-model="asset.symbol"
             class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500">
         </div>
         <div class="col-span-2 mb-4">
           <label for="price" class="block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">Group</label>
-          <input v-model="asset['group']"
+          <input v-model="asset.group"
             class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500">
         </div>
         <div class="col-span-2 mb-4">
           <label for="number" class="block mb-2 text-sm font-medium text-gray-900 dark:text-gray-300">Amount</label>
-          <input v-model="asset['amount']" type="number" step="0.1"
+          <input v-model="asset.amount" type="number" step="0.1"
             class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500">
         </div>
         <div class="col-span-2 mb-4 flex flex-col justify-end">
@@ -152,8 +152,14 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue';
+import CryptoJS from 'crypto-js';
 
-interface Symbol {
+const url = 'wss://socket.coinex.com/';
+const access_id = '7847A08FB08947EFBC73203AC2DB2765';
+const secret_key = 'A8884935839A26ACF602CDA4A265436E386E2187048A7538';
+
+
+interface Asset {
   symbol: string,
   amount: number,
   group: string
@@ -163,18 +169,18 @@ const runtimeConfig = useRuntimeConfig()
 
 
 const assets = ref([]);
-const asset = ref<Symbol | null>({
+const asset = ref<Asset>({
   symbol: '',
   amount: 0,
   group: '-1'
 });
-const sb = ref<Symbol | null>({
+const sb = ref<Asset>({
   symbol: '',
   amount: 0,
   group: '-1'
 });
 const showSellBuy = ref(false);
-const socket = ref(null);
+const socket = ref<any>();
 const token = ref(null);
 const id = ref(null);
 const prices = ref({});
@@ -182,7 +188,7 @@ const avgs = ref({});
 const totals = ref({});
 const inDollors = ref({});
 const refRes = ref({});
-const msg = ref(false);
+const msg = ref('');
 const loading = ref(false);
 
 
@@ -206,6 +212,13 @@ const init = async () => {
 
     const responseData = await response.json();
     console.log(responseData);
+
+    //initial socket 
+    socket.value = new WebSocket(url);
+
+    /* socket.value.onopen = () => {
+      console.log('WebSocket connection established');
+    }; */
   } catch (error) {
     console.error("Error posting data:", error);
   }
@@ -237,6 +250,25 @@ const addOrEdit = async () => {
   } else {
     msg.value = "Wrong input.";
   }
+}
+const auth = () => {
+  let current_time = new Date().getTime();
+  let sign_str = "access_id=" + access_id + "&tonce=" + current_time + "&secret_key=" + secret_key;
+  const hash = CryptoJS.MD5(sign_str).toString(CryptoJS.enc.Hex).toUpperCase();
+  let param = {
+    "id": 1,
+    "method": "server.sign",
+    "params": [access_id, hash, current_time]
+  };
+
+
+  /* console.log(current_time);
+  console.log(sign_str);
+  console.log(hash);
+  console.log(param); */
+
+
+  /* await this.socket.send(JSON.stringify(param));*/
 }
 
 onMounted(() => {

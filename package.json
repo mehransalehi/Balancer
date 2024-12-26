@@ -11,8 +11,16 @@
   },
   "dependencies": {
     "bootstrap": "^5.3.3",
+    "crypto": "^1.0.1",
+    "crypto-browserify": "^3.12.1",
+    "crypto-js": "^4.2.0",
     "nuxt": "^3.14.1592",
     "vue": "latest",
-    "vue-router": "latest"
+    "vue-router": "latest",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/crypto-js": "^4.2.2",
+    "@types/node": "^22.10.2"
   }
 }
