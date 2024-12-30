@@ -10,6 +10,8 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
+    "@nuxtjs/tailwindcss": "^6.12.2",
+    "@vesp/nuxt-fontawesome": "^1.1.0",
     "bootstrap": "^5.3.3",
     "crypto": "^1.0.1",
     "crypto-browserify": "^3.12.1",
