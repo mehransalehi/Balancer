@@ -168,12 +168,14 @@ const url = 'wss://socket.coinex.com/v2/spot';
 
 
 interface Asset {
+  id: number,
   symbol: string,
   amount: number,
   group: string
 }
 interface groupAssets {
   [key: string]: {
+    id: number,
     symbol: string,
     asks: number,
     bids: number,
@@ -189,6 +191,7 @@ const hash = ref<string>('');//coinex secret string that combine with timestamp 
 
 const assets = ref<{ id: number, symbol: string, amount: number, group: string, created_at: string }[]>([]);
 const asset = ref<Asset>({
+  id: -1,
   symbol: '',
   amount: 0,
   group: '-1'
@@ -203,7 +206,7 @@ const assetsGroups = ref<groupAssets>({});
 const totalNumberInEachGroup = ref<{ [key: string]: number }>({})
 const avgInEachGroup = ref<{ [key: string]: number }>({})
 const delay = ref(true);
-
+const allPairsHavePrice = ref(true);
 
 
 
@@ -227,7 +230,7 @@ const init = async () => {
     assets.value = (await resSymbols.json()).assets;
     refresh()
     //initial socket 
-    /* socket.value = new WebSocket(url);
+    socket.value = new WebSocket(url);
     socket.value.binaryType = "arraybuffer";
 
 
@@ -253,7 +256,7 @@ const init = async () => {
       console.log("Code:", e.code);          // Close code
       console.log("Reason:", e.reason);      // Close reason (if available)
       console.log("Was clean?", e.wasClean); // If the closure was clean (i.e., no error)
-    } */
+    }
 
   } catch (error) {
     console.error("Error posting data:", error);
@@ -273,6 +276,7 @@ const refresh = () => {
     if (prices.value.hasOwnProperty(`${symbol}USDT`) &&
       prices.value[`${symbol}USDT`].bids.length > 0) {
       tmpArr.push({
+        id: asset.id,
         symbol: symbol,
         bids: prices.value[`${symbol}USDT`].bids[0][0],
         asks: prices.value[`${symbol}USDT`].asks[0][0],
@@ -282,6 +286,7 @@ const refresh = () => {
       });
     } else {
       tmpArr.push({
+        id: asset.id,
         symbol: symbol,
         bids: 0,
         asks: 0,
@@ -292,6 +297,10 @@ const refresh = () => {
     }
   }
 
+
+  allPairsHavePrice.value = tmpArr.findIndex((tmpAsset) => {
+    return tmpAsset.bids == 0 || tmpAsset.asks == 0;
+  }) > -1 ? false : true;
 
   let groups = tmpArr.reduce((groups: groupAssets, asset) => {
     const group = (groups[asset.group] || []);
@@ -332,8 +341,7 @@ const refresh = () => {
 const addOrEdit = async () => {
   if (asset.value.symbol && asset.value.amount > 0 && asset.value.group) {
     loading.value = true;
-    asset.value.symbol = asset.value.symbol.replace("/", "").toUpperCase();
-    asset.value.group = asset.value.group.toUpperCase();
+    console.log(asset.value);
     try {
       const response = await fetch(`${runtimeConfig.public.apiBase}symbols`, {
         method: "POST", // HTTP method
@@ -349,9 +357,9 @@ const addOrEdit = async () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const responseData = await response.json(); // Parse the response
+      assets.value = (await response.json()).assets;
       canceleSellBuy();
-      console.log("Response from API:", responseData);
+      console.log("Response from API:", response);
     } catch (error) {
       console.error("Error posting data:", error);
       canceleSellBuy();
@@ -361,16 +369,13 @@ const addOrEdit = async () => {
   }
 }
 const deleteSymbol = async (symbol: any) => {
-  if(!confirm("Are You Sure TO Delete : "+ symbol.symbol)){
+  if (!confirm("Are You Sure TO Delete : " + symbol.symbol)) {
     return true;
   }
-  console.log(assets.value);
-  console.log(symbol);
-  let index = assets.value.findIndex((sym) => {
-    return sym.symbol.toUpperCase() == symbol.symbol.toUpperCase() && sym.group.toUpperCase() == symbol.group.toUpperCase();
+  let target = assets.value.find((asset) => {
+    return asset.id == symbol.id;
   });
-  if (index > -1) {
-    let target = assets.value[index];
+  if (target) {
     try {
       const resSymbols = await fetch(`${runtimeConfig.public.apiBase}symbols/${target.id}`, {
         method: "DELETE", // HTTP method
@@ -390,29 +395,33 @@ const deleteSymbol = async (symbol: any) => {
     } catch (error) {
       console.error("Error deleting data:", error);
     }
-  }else{
+  } else {
     console.log("not found");
   }
 
 }
 
 const editSymbol = (symbol: any) => {
+  asset.value.id = symbol.id;
   asset.value.symbol = symbol.symbol;
   asset.value.amount = symbol.amount;
   asset.value.group = symbol.group;
 
 }
 const depthSign = async () => {
+  let market = [];
+  for (const asset of assets.value) {
+    market.push([
+      `${asset.symbol.toUpperCase()}USDT`,
+      10, "0", true
+    ]);
+  }
+  console.log(market);
   let param = {
     "id": 1,
     "method": "depth.subscribe",
     "params": {
-      "market_list": [
-        ["BTCUSDT", 10, "0", true],
-        ["XRPUSDT", 10, "0", true],
-        ["ADAUSDT", 10, "0", true],
-        ["BNBUSDT", 10, "0", true],
-      ]
+      "market_list": market
     },
   };
   await socket.value.send(JSON.stringify(param));
@@ -428,7 +437,13 @@ const message = async (data: any, flags: any) => {
     const strData = JSON.parse(decompressed);
     // console.log("Parsed JSON:", strData);
     if (strData.method == 'depth.update' && delay.value) {
-      delay.value = false;
+      if (allPairsHavePrice.value) {
+        delay.value = false;
+        window.setTimeout(() => {
+          delay.value = true;
+        }, 5000);
+      }
+
       const updateData = strData.data;
       let isFul = updateData.is_full;
       let depth = updateData.depth;
@@ -462,9 +477,7 @@ const message = async (data: any, flags: any) => {
         }
       }
 
-      window.setTimeout(() => {
-        delay.value = true;
-      }, 5000);
+
       refresh();
     }
   } catch (error) {
@@ -515,13 +528,12 @@ const sellBuy = (side: string) => {
     msg.value = `Not Compeleted Yet >>> ${msg.value}`;
     return true;
   }
-  let index = assets.value.findIndex((sym) => {
-    return sym.symbol == asset.value.symbol.toUpperCase() && sym.group == asset.value.group.toUpperCase();
-  })
-  if (asset.value.symbol != '' && index >= 0) {
+  let target = assets.value.find((sym) => {
+    return asset.value.id == sym.id;
+  });
+  if (asset.value.symbol != '' && target) {
     loading.value = true;
     msg.value = 'Saving...';
-    let target = assets.value[index];
 
     side == 'buy' ?
       asset.value.amount = target.amount + asset.value.amount :
@@ -533,11 +545,13 @@ const sellBuy = (side: string) => {
 }
 const initSellBuy = (symbol: any) => {
   showSellBuy.value = true;
+  asset.value.id = symbol.id;
   asset.value.symbol = symbol.symbol;
   asset.value.group = symbol.group;
 }
 const canceleSellBuy = () => {
   showSellBuy.value = false;
+  asset.value.id = -1;
   asset.value.symbol = '';
   asset.value.amount = 0;
   asset.value.group = '-1';
