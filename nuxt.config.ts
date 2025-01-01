@@ -17,8 +17,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     // Keys within public are also exposed client-side
     public: {
-      apiBase: 'http://localhost:8787/api/',
-      apiAuth: ')Kl,5sT"WDE*=qqIe;is#D[xkvvF87UooKjG;7V]PAz8dQzC3tSd{7.j7mK9)Clt',
+      apiBase: process.env.API_URL,
+      apiAuth: process.env.AUTH_TOKEN,
     }
   },
 
